@@ -162,7 +162,7 @@ resource "aws_codebuild_project" "test" {
 
   source {
     type      = "CODEPIPELINE"
-    buildspec = "buildspec.yml"
+    buildspec = "buildspec.yaml"
   }
 }
 
