@@ -1,83 +1,5 @@
-resource "aws_codepipeline" "codepipeline" {
-  name     = "tf-test-pipeline"
-  role_arn = aws_iam_role.codepipeline_role.arn
-
-  artifact_store {
-    location = aws_s3_bucket.codepipeline_bucket.bucket
-    type     = "S3"
-
-    encryption_key {
-      id   = data.aws_kms_alias.s3kmskey.arn
-      type = "KMS"
-    }
-  }
-
-  stage {
-    name = "Source"
-
-    action {
-      name             = "Source"
-      category         = "Source"
-      owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
-      version          = "1"
-      output_artifacts = ["source_output"]
-
-      configuration = {
-        ConnectionArn    = "arn:aws:codeconnections:ap-southeast-2:257402715157:connection/d78f8e69-a8e2-4bad-8c9c-ca13973a26ff"
-        FullRepositoryId = "my-organization/example"
-        BranchName       = "main"
-      }
-    }
-  }
-
-  stage {
-    name = "Build"
-
-    action {
-      name             = "Build"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
-      output_artifacts = ["build_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = "test"
-      }
-    }
-  }
-
-  stage {
-    name = "Deploy"
-
-    action {
-      name            = "Deploy"
-      category        = "Deploy"
-      owner           = "AWS"
-      provider        = "CloudFormation"
-      input_artifacts = ["build_output"]
-      version         = "1"
-
-      configuration = {
-        ActionMode     = "REPLACE_ON_FAILURE"
-        Capabilities   = "CAPABILITY_AUTO_EXPAND,CAPABILITY_IAM"
-        OutputFileName = "CreateStackOutput.json"
-        StackName      = "MyStack"
-        TemplatePath   = "build_output::sam-templated.yaml"
-      }
-    }
-  }
-}
-
-resource "aws_codestarconnections_connection" "example" {
-  name          = "me"
-  provider_type = "GitHub"
-}
-
 resource "aws_s3_bucket" "codepipeline_bucket" {
-  bucket = "build-bucket"
+  bucket = "hello-codepipeline-${random_id.suffix.hex}"
 }
 
 resource "aws_s3_bucket_public_access_block" "codepipeline_bucket_pab" {
@@ -89,15 +11,20 @@ resource "aws_s3_bucket_public_access_block" "codepipeline_bucket_pab" {
   restrict_public_buckets = true
 }
 
+# GitHub connection
+resource "aws_codestarconnections_connection" "example" {
+  name          = "me"
+  provider_type = "GitHub"
+}
+
+# IAM role for CodePipeline
 data "aws_iam_policy_document" "assume_role" {
   statement {
     effect = "Allow"
-
     principals {
       type        = "Service"
       identifiers = ["codepipeline.amazonaws.com"]
     }
-
     actions = ["sts:AssumeRole"]
   }
 }
@@ -110,7 +37,6 @@ resource "aws_iam_role" "codepipeline_role" {
 data "aws_iam_policy_document" "codepipeline_policy" {
   statement {
     effect = "Allow"
-
     actions = [
       "s3:GetObject",
       "s3:GetObjectVersion",
@@ -118,7 +44,6 @@ data "aws_iam_policy_document" "codepipeline_policy" {
       "s3:PutObjectAcl",
       "s3:PutObject",
     ]
-
     resources = [
       aws_s3_bucket.codepipeline_bucket.arn,
       "${aws_s3_bucket.codepipeline_bucket.arn}/*"
@@ -128,17 +53,15 @@ data "aws_iam_policy_document" "codepipeline_policy" {
   statement {
     effect    = "Allow"
     actions   = ["codestar-connections:UseConnection"]
-    resources = [aws_codestarconnections_connection.example.arn]
+    resources = ["arn:aws:codestar-connections:ap-southeast-2:257402715157:connection/f7b3b916-d6e1-438e-92eb-2eb3abed0a91"]
   }
 
   statement {
     effect = "Allow"
-
     actions = [
       "codebuild:BatchGetBuilds",
       "codebuild:StartBuild",
     ]
-
     resources = ["*"]
   }
 }
@@ -149,6 +72,143 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
   policy = data.aws_iam_policy_document.codepipeline_policy.json
 }
 
-data "aws_kms_alias" "s3kmskey" {
-  name = "alias/myKmsKey"
+# Role for CodeBuild to allow uploading to the target S3 bucket
+data "aws_iam_policy_document" "codebuild_assume" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["codebuild.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "codebuild_role" {
+  name               = "codebuild-role"
+  assume_role_policy = data.aws_iam_policy_document.codebuild_assume.json
+}
+
+data "aws_iam_policy_document" "codebuild_policy" {
+  # Allow CodeBuild to read pipeline artifacts
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:GetBucketVersioning",
+      "s3:PutObject",
+      "s3:ListBucket"
+    ]
+    resources = [
+      aws_s3_bucket.codepipeline_bucket.arn,
+      "${aws_s3_bucket.codepipeline_bucket.arn}/*"
+    ]
+  }
+
+  # Allow CodeBuild to upload to the target deployment bucket
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:ListBucket"
+    ]
+    resources = [
+      aws_s3_bucket.test-s3-bucket.arn,
+      "${aws_s3_bucket.test-s3-bucket.arn}/*"
+    ]
+  }
+
+  # Allow CloudWatch logs
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["*"]
+  }
+}
+
+
+resource "aws_iam_role_policy" "codebuild_policy" {
+  name   = "codebuild-policy"
+  role   = aws_iam_role.codebuild_role.id
+  policy = data.aws_iam_policy_document.codebuild_policy.json
+}
+
+# CodeBuild project that uploads to S3
+resource "aws_codebuild_project" "test" {
+  name         = "test"
+  service_role = aws_iam_role.codebuild_role.arn
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type    = "BUILD_GENERAL1_SMALL"
+    image           = "aws/codebuild/standard:7.0"
+    type            = "LINUX_CONTAINER"
+    privileged_mode = false
+
+    environment_variable {
+      name  = "TARGET_BUCKET"
+      value = aws_s3_bucket.test-s3-bucket.bucket
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "buildspec.yml"
+  }
+}
+
+
+# CodePipeline definition
+resource "aws_codepipeline" "codepipeline" {
+  name     = "tf-test-pipeline"
+  role_arn = aws_iam_role.codepipeline_role.arn
+
+  artifact_store {
+    location = aws_s3_bucket.codepipeline_bucket.bucket
+    type     = "S3"
+  }
+
+  stage {
+    name = "Source"
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["source_output"]
+
+      configuration = {
+        ConnectionArn    = "arn:aws:codestar-connections:ap-southeast-2:257402715157:connection/f7b3b916-d6e1-438e-92eb-2eb3abed0a91"
+        FullRepositoryId = "richardsunau/hello-index"
+        BranchName       = "main"
+      }
+    }
+  }
+
+  stage {
+    name = "Deploy"
+    action {
+      name             = "DeployToS3"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["source_output"]
+      output_artifacts = []
+      version          = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.test.name
+      }
+    }
+  }
 }

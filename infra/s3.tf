@@ -1,5 +1,11 @@
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+
 resource "aws_s3_bucket" "test-s3-bucket" {
-  bucket = "hello-html"
+  bucket = "hello-html-${random_id.suffix.hex}"
+
 
   tags = {
     Name        = "My bucket"
