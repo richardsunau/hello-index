@@ -53,7 +53,7 @@ data "aws_iam_policy_document" "codepipeline_policy" {
   statement {
     effect    = "Allow"
     actions   = ["codestar-connections:UseConnection"]
-    resources = ["arn:aws:codestar-connections:ap-southeast-2:257402715157:connection/f7b3b916-d6e1-438e-92eb-2eb3abed0a91"]
+    resources = ["arn:aws:codestar-connections:ap-southeast-2:257402715157:connection/bdc16046-06c4-4de1-8399-5cd81dcd6193"]
   }
 
   statement {
@@ -201,7 +201,7 @@ resource "aws_codepipeline" "codepipeline" {
       output_artifacts = ["source_output"]
 
       configuration = {
-        ConnectionArn    = "arn:aws:codestar-connections:ap-southeast-2:257402715157:connection/f7b3b916-d6e1-438e-92eb-2eb3abed0a91"
+        ConnectionArn    = "arn:aws:codestar-connections:ap-southeast-2:257402715157:connection/bdc16046-06c4-4de1-8399-5cd81dcd6193"
         FullRepositoryId = "richardsunau/hello-index"
         BranchName       = "main"
       }
