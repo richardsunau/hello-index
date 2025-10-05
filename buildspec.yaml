@@ -4,4 +4,4 @@ phases:
   build:
     commands:
       - echo "Uploading index.html to S3..."
-      - aws s3 cp src/index.html s3://$TARGET_BUCKET/index.html --acl public-read
+      - aws s3 cp src/index.html s3://$TARGET_BUCKET/index.html
